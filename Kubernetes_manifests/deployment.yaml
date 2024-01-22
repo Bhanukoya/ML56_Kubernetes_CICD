@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+        - name: web-app-container
+          image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/ML65/beacon:latest
+          ports:
+            - containerPort: 80
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+          env:
+            - name: RDS_USERNAME
+              value: "$DB_USERNAME"  ## Setting these as GitLab variables or in configmap or vault
+            - name: RDS_PASSWORD
+              value: "$DB_PASSWORD"  ## Setting these as GitLab sensitive variables or in configmap or vault
+      imagePullSecrets:
+        - name: $ECR_Password

@@ -1,0 +1,85 @@
+stages:
+  - Infra-provision
+  - build
+  - docker
+  - test
+  - deploy
+
+variables:
+  AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID          # Variables can be defined here but I am setting up variables in the GitLab settings
+  AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY  # Variables can be defined here but I am setting up variables (sensitive) in the GitLab settings
+  AWS_Account_ID: $AWS_Account_ID
+  ECR_Username: $ECR_Username
+  ECR_Password: $ECR_Password
+  SONAR_TOKEN: $SONAR_TOKEN
+  CLUSTER_NAME: $CLUSTER_NAME
+  NAMESPACE: $NAMESPACE
+
+
+before_script:
+  - echo "Setting up environment"
+  - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+  - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+  - aws configure set region us-east-1
+
+
+Infra-provision:
+  stage: Infra-provision
+  script:
+    - echo "Initializing terraform"
+    - cd Infra
+    - terraform --version
+    - terraform init
+    - terraform plan
+    - terraform apply -auto-approve
+  only:
+    - main
+
+
+build:
+  stage: build
+  script:
+    - echo "Building the web application"
+    - cd ../Node_Js_app
+    - npm install
+    - npm run build
+  only:
+    - merge_requests
+
+
+dockerize:
+  stage: docker
+  script:
+    - echo "Creating Docker image"
+    - docker build -t $AWS_Account_ID.dkr.ecr.us-east-1.amazonaws.com/ML65/beacon:latest ./Node_Js_app
+    - echo "$ECR_Password" | docker login --username "$ECR_Username" --password-stdin $AWS_Account_ID.dkr.ecr.us-east-1.amazonaws.com
+    - echo "Pushing Docker image to ECR"
+    - docker push $AWS_Account_ID.dkr.ecr.us-east-1.amazonaws.com/ML65/beacon:latest
+  only:
+    - merge_requests
+
+
+sonarqube-scan:
+  stage: test
+  script:
+    - echo "Running test with jest testing framework"
+    - cd ../Node_Js_app
+    - npm install
+    - npm run test:jest  # using jest for testing and having a script named test:jest in the package.json
+    - echo "Running SonarQube analysis"
+    - sonar-scanner -Dsonar.host.url=https://sonarqube-instance -Dsonar.login=$SONAR_TOKEN
+  only:
+    - merge_requests
+
+
+deploy-manifests:
+  stage: deploy
+  script:
+    - echo "Deploying to Kubernetes..."
+    - cd ../Kubernetes_manifests
+    - aws eks --region us-east-1 update-kubeconfig --name $CLUSTER_NAME
+    - kubectl apply -f deployment.yaml -n $NAMESPACE
+    - kubectl apply -f service.yaml -n $NAMESPACE
+  only:
+    - main
+
